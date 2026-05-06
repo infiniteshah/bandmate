@@ -11,6 +11,19 @@ import { memberLoadingCopy } from "@/lib/copy";
 import { recordRoom } from "@/lib/library";
 import type { Member, Session, Slot } from "@/lib/types";
 
+function sessionShallowEqual(a: Session, b: Session): boolean {
+  return (
+    a.code === b.code &&
+    a.status === b.status &&
+    a.player1?.name === b.player1?.name &&
+    a.player1?.portraitUrl === b.player1?.portraitUrl &&
+    a.player2?.name === b.player2?.name &&
+    a.player2?.portraitUrl === b.player2?.portraitUrl &&
+    a.band?.name === b.band?.name &&
+    a.band?.albumCoverUrl === b.band?.albumCoverUrl
+  );
+}
+
 type Stage = "capture" | "generating" | "reveal" | "waiting";
 
 type Props = {
@@ -47,7 +60,7 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         if (!res.ok) return;
         const next = (await res.json()) as Session;
         if (cancelled) return;
-        setSession(next);
+        setSession((prev) => (sessionShallowEqual(prev, next) ? prev : next));
 
         if (next.player1 && next.player2 && !next.band && !startedBandRef.current) {
           startedBandRef.current = true;

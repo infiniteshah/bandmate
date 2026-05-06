@@ -1,9 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { getEntries, removeRoom, type LibraryEntry } from "@/lib/library";
 import type { Session } from "@/lib/types";
+
+function sessionEqual(a: Session | null | undefined, b: Session | null | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.code === b.code &&
+    a.status === b.status &&
+    a.player1?.name === b.player1?.name &&
+    a.player1?.portraitUrl === b.player1?.portraitUrl &&
+    a.player2?.name === b.player2?.name &&
+    a.player2?.portraitUrl === b.player2?.portraitUrl &&
+    a.band?.name === b.band?.name &&
+    a.band?.albumCoverUrl === b.band?.albumCoverUrl
+  );
+}
 
 type Resolved = {
   entry: LibraryEntry;
@@ -32,21 +47,29 @@ export function LibraryStrip() {
             const res = await fetch(`/api/session/${e.code}`, { cache: "no-store" });
             if (res.status === 404) {
               if (!cancelled) {
-                setMissing((m) => new Set(m).add(e.code));
+                setMissing((m) => {
+                  if (m.has(e.code)) return m;
+                  const next = new Set(m);
+                  next.add(e.code);
+                  return next;
+                });
               }
               return;
             }
             if (!res.ok) return;
             const s = (await res.json()) as Session;
             if (!cancelled) {
-              setSessions((prev) => ({ ...prev, [e.code]: s }));
+              setSessions((prev) => {
+                if (sessionEqual(prev[e.code], s)) return prev;
+                return { ...prev, [e.code]: s };
+              });
             }
           } catch {}
         }),
       );
     };
     loadAll();
-    const id = setInterval(loadAll, 5000);
+    const id = setInterval(loadAll, 8000);
     return () => {
       cancelled = true;
       clearInterval(id);
@@ -63,10 +86,10 @@ export function LibraryStrip() {
       }));
   }, [entries, sessions, missing]);
 
-  function forget(code: string) {
+  const forget = useCallback((code: string) => {
     removeRoom(code);
     setEntries((prev) => prev.filter((e) => e.code !== code));
-  }
+  }, []);
 
   useEffect(() => {
     if (missing.size === 0) return;
@@ -97,7 +120,16 @@ export function LibraryStrip() {
   );
 }
 
-function LibraryRow({
+const LibraryRow = memo(LibraryRowImpl, (a, b) => {
+  return (
+    a.entry.code === b.entry.code &&
+    a.entry.role === b.entry.role &&
+    sessionEqual(a.session, b.session) &&
+    a.onForget === b.onForget
+  );
+});
+
+function LibraryRowImpl({
   entry,
   session,
   onForget,
