@@ -56,6 +56,15 @@ export function classifyError(err: unknown): GenerationError {
       err,
     );
   }
+  // Replicate prediction failures: "prediction failed", "no image url", or any
+  // replicate.delivery / replicate.com domain reference in the error message.
+  if (/prediction|replicate|no image url/.test(lower)) {
+    return new GenerationError(
+      "model_busy",
+      "The image model hit a snag. Try once more.",
+      err,
+    );
+  }
   return new GenerationError(
     "generation_failed",
     "Something glitched mid-generation. Try once more.",

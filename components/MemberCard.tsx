@@ -39,10 +39,10 @@ export function MemberCard({ member, label }: { member: Member; label?: string }
           <div key={k}>
             <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.14em] text-ink/60">
               <span>{STAT_LABEL[k]}</span>
-              <span className="font-mono text-ink/80">{member.stats[k]}</span>
+              <span className="font-mono text-ink/80">{member.stats?.[k] ?? 5}</span>
             </div>
             <div className="bar">
-              <span style={{ width: `${(member.stats[k] / 10) * 100}%` }} />
+              <span style={{ width: `${((member.stats?.[k] ?? 5) / 10) * 100}%` }} />
             </div>
           </div>
         ))}

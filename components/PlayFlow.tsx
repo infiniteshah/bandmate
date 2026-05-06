@@ -9,7 +9,7 @@ import { RoomCodeShare } from "./RoomCodeShare";
 import { Wordmark } from "./Wordmark";
 import { memberLoadingCopy } from "@/lib/copy";
 import { recordRoom } from "@/lib/library";
-import type { Member, Session, Slot } from "@/lib/types";
+import type { Member, Session, SessionStatus, Slot } from "@/lib/types";
 
 function sessionShallowEqual(a: Session, b: Session): boolean {
   return (
@@ -34,6 +34,10 @@ type Props = {
 
 export function PlayFlow({ code, slot, initialSession }: Props) {
   const router = useRouter();
+  // Stable ref so the polling effect never needs router in its deps
+  const routerRef = useRef(router);
+  routerRef.current = router;
+
   const [session, setSession] = useState<Session>(initialSession);
   const [stage, setStage] = useState<Stage>(() =>
     initialSession[slot] ? (slot === "player1" ? "waiting" : "reveal") : "capture",
@@ -61,7 +65,20 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         if (!res.ok) return;
         const next = (await res.json()) as Session;
         if (cancelled) return;
-        setSession((prev) => (sessionShallowEqual(prev, next) ? prev : next));
+        setSession((prev) => {
+          if (sessionShallowEqual(prev, next)) return prev;
+          // Never let a stale server read erase player/band data we already have locally.
+          // KV read-after-write lag can return null for a slot that was just written.
+          const merged: Session = {
+            ...next,
+            player1: next.player1 ?? prev.player1,
+            player2: next.player2 ?? prev.player2,
+            band: next.band ?? prev.band,
+          };
+          // If merging produced no visible change, skip the re-render.
+          if (sessionShallowEqual(prev, merged)) return prev;
+          return merged;
+        });
 
         if (
           next.player1 &&
@@ -90,7 +107,7 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         }
 
         if (next.band) {
-          router.push(`/band/${code}`);
+          routerRef.current.push(`/band/${code}`);
         }
       } catch {}
     };
@@ -100,7 +117,8 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [code, router, session.band, stage, bandError]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, session.band, stage, bandError]);
 
   function retryBand() {
     setBandError(null);
@@ -116,13 +134,33 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code, slot, image: dataUrl, mediaType }),
       });
+
       if (!res.ok) {
+        // 409 means the server already completed generation on a previous attempt
+        // but the network response was lost before the client received it.
+        // Recover by using the member the server already stored.
+        if (res.status === 409) {
+          const body = await res.json().catch(() => null);
+          if (body?.member) {
+            const updated: Session = { ...session, [slot]: body.member } as Session;
+            setSession(updated);
+            setStage("reveal");
+            return;
+          }
+        }
         const body = await res.json().catch(() => null);
         const fallback = friendlyForStatus(res.status);
         throw new Error(body?.error ?? fallback);
       }
-      const data = (await res.json()) as { member: Member };
-      const updated: Session = { ...session, [slot]: data.member } as Session;
+
+      const data = (await res.json()) as { member: Member; status?: SessionStatus };
+      // Include server-returned status so local state stays in sync with KV,
+      // preventing spurious setSession calls on the first polling tick.
+      const updated: Session = {
+        ...session,
+        [slot]: data.member,
+        ...(data.status ? { status: data.status } : {}),
+      } as Session;
       setSession(updated);
       setStage("reveal");
     } catch (e) {
@@ -153,6 +191,11 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
               a stranger's umbrella. Claude will turn it into your bandmate.
             </p>
           </div>
+          <PhotoCapture
+            onPicked={handlePicked}
+            onError={(m) => setError(m)}
+            hint="Use your camera or pick from photos."
+          />
           {otherMember && slot === "player2" ? (
             <div className="opacity-90">
               <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-ink/55">
@@ -161,11 +204,6 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
               <MemberCard member={otherMember} />
             </div>
           ) : null}
-          <PhotoCapture
-            onPicked={handlePicked}
-            onError={(m) => setError(m)}
-            hint="Use your camera or pick from photos."
-          />
           {error ? (
             <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">
               {error}

@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { MemberCard } from "@/components/MemberCard";
+import { JoinFlow } from "@/components/JoinFlow";
 import { Wordmark } from "@/components/Wordmark";
 import { isRoomCode } from "@/lib/code";
 import { getSession } from "@/lib/kv";
@@ -36,26 +36,5 @@ export default async function JoinPage({ params }: { params: { code: string } })
     );
   }
 
-  return (
-    <div className="flex flex-1 flex-col gap-6">
-      <header className="flex items-center justify-between">
-        <Wordmark />
-        <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-ink/55">
-          Room {code}
-        </span>
-      </header>
-      <div>
-        <h1 className="headline text-3xl font-semibold leading-tight">
-          {session.player1.name} is looking for a bandmate.
-        </h1>
-        <p className="mt-2 text-[15px] text-ink/70">
-          Photograph any object to join the band.
-        </p>
-      </div>
-      <MemberCard member={session.player1} label="Player 1" />
-      <Link href={`/play/${code}/player2`} className="btn btn-primary">
-        Join the band
-      </Link>
-    </div>
-  );
+  return <JoinFlow code={code} session={session} player1={session.player1} />;
 }

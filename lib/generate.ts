@@ -71,9 +71,14 @@ export async function generateMember(
     vibe: clampStat(ai.stats?.vibe),
   };
 
-  const portraitTmpUrl = await generateSquareImage(
-    portraitPrompt(ai.visualDescriptor, ai.instrument),
-  );
+  const prompt = portraitPrompt(ai.visualDescriptor, ai.instrument);
+  let portraitTmpUrl: string;
+  try {
+    portraitTmpUrl = await generateSquareImage(prompt);
+  } catch {
+    // Single retry — Replicate failed predictions are almost always transient
+    portraitTmpUrl = await generateSquareImage(prompt);
+  }
   const portraitUrl = await uploadImageFromUrl(
     portraitTmpUrl,
     `bandmate/${code}/${slot}-portrait.png`,
