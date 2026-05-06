@@ -124,9 +124,14 @@ export async function generateBand(
   if (!Number.isFinite(score)) score = 7.3;
   score = Math.max(6.0, Math.min(8.9, Math.round(score * 10) / 10));
 
-  const coverTmpUrl = await generateSquareImage(
-    albumCoverPrompt(ai.genre, member1.visualDescriptor, member2.visualDescriptor),
-  );
+  const coverPrompt = albumCoverPrompt(ai.genre, member1.visualDescriptor, member2.visualDescriptor);
+  let coverTmpUrl: string;
+  try {
+    coverTmpUrl = await generateSquareImage(coverPrompt);
+  } catch {
+    // Single retry — Replicate failed predictions are almost always transient
+    coverTmpUrl = await generateSquareImage(coverPrompt);
+  }
   const albumCoverUrl = await uploadImageFromUrl(
     coverTmpUrl,
     `bandmate/${code}/album-cover.png`,

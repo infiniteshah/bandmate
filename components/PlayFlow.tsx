@@ -45,6 +45,13 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [bandError, setBandError] = useState<string | null>(null);
   const startedBandRef = useRef(false);
+  // Tracks true component unmount (not just effect re-run) so we can surface
+  // band gen errors even when the polling effect cleans up mid-flight.
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const myMember = session[slot];
   const otherSlot: Slot = slot === "player1" ? "player2" : "player1";
@@ -95,12 +102,17 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
           })
             .then(async (res) => {
               if (!res.ok) {
+                // 409 means the server is already fusing (another client beat us here).
+                // Treat as a no-op — keep polling until the band appears.
+                if (res.status === 409) return;
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error ?? friendlyForStatus(res.status));
               }
             })
             .catch((err) => {
-              if (cancelled) return;
+              // Use mountedRef (not cancelled) so errors surface even when the
+              // polling effect re-runs mid-flight due to session.band changing.
+              if (!mountedRef.current) return;
               setBandError(err instanceof Error ? err.message : "Couldn't form the band.");
               startedBandRef.current = false;
             });

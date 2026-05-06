@@ -33,6 +33,9 @@ export async function POST(req: Request) {
   if (session.band) {
     return NextResponse.json({ band: session.band, status: session.status });
   }
+  if (session.status === "fusing") {
+    return NextResponse.json({ already: true, status: "fusing" }, { status: 409 });
+  }
 
   session.status = "fusing";
   await saveSession(session);
@@ -51,14 +54,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ band, status: fresh.status });
   } catch (err) {
     const e = classifyError(err);
-    console.error(`[band.generate] ${code} ${e.code}`, err);
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const cause = (err as Error & { cause?: unknown })?.cause;
+    const causeMessage = cause instanceof Error ? cause.message : undefined;
+    console.error(
+      `[band.generate] ${code} ${e.code}: ${rawMessage}` +
+        (causeMessage ? ` (cause: ${causeMessage})` : ""),
+      err,
+    );
     const reverted = await getSession(code);
     if (reverted && !reverted.band) {
       reverted.status = nextStatus(reverted);
       await saveSession(reverted);
     }
     return NextResponse.json(
-      { error: e.userMessage, code: e.code },
+      { error: e.userMessage, code: e.code, cause: rawMessage },
       { status: statusForCode(e.code) },
     );
   }
