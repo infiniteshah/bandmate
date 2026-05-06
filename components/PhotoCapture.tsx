@@ -1,14 +1,17 @@
 "use client";
 import { useRef, useState } from "react";
+import { compressImage } from "@/lib/image";
 
 type Props = {
-  onPicked: (file: File, dataUrl: string) => void;
+  onPicked: (dataUrl: string, mediaType: "image/jpeg") => void;
+  onError: (message: string) => void;
   hint?: string;
 };
 
-export function PhotoCapture({ onPicked, hint }: Props) {
+export function PhotoCapture({ onPicked, onError, hint }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
 
   function open() {
     inputRef.current?.click();
@@ -17,9 +20,17 @@ export function PhotoCapture({ onPicked, hint }: Props) {
   async function onChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    setPreview(dataUrl);
-    onPicked(file, dataUrl);
+    setWorking(true);
+    try {
+      const compressed = await compressImage(file);
+      setPreview(compressed.dataUrl);
+      onPicked(compressed.dataUrl, compressed.mediaType);
+    } catch {
+      onError("Couldn't read that photo. Try a different one.");
+    } finally {
+      setWorking(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
   }
 
   return (
@@ -34,7 +45,8 @@ export function PhotoCapture({ onPicked, hint }: Props) {
       />
       <button
         onClick={open}
-        className="frame group flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-md text-ink/70 transition hover:text-ink"
+        disabled={working}
+        className="frame group flex aspect-square w-full max-w-sm flex-col items-center justify-center gap-3 rounded-md text-ink/70 transition hover:text-ink disabled:opacity-70"
       >
         {preview ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -47,7 +59,7 @@ export function PhotoCapture({ onPicked, hint }: Props) {
           <>
             <CameraIcon />
             <div className="font-mono text-[11px] uppercase tracking-[0.22em]">
-              Tap to photograph an object
+              {working ? "Preparing photo..." : "Tap to photograph an object"}
             </div>
             {hint ? (
               <div className="max-w-[22ch] text-center text-[13px] text-ink/55">
@@ -78,13 +90,4 @@ function CameraIcon() {
       <circle cx="12" cy="13" r="3.5" />
     </svg>
   );
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }

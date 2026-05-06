@@ -39,6 +39,7 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
     initialSession[slot] ? (slot === "player1" ? "waiting" : "reveal") : "capture",
   );
   const [error, setError] = useState<string | null>(null);
+  const [bandError, setBandError] = useState<string | null>(null);
   const startedBandRef = useRef(false);
 
   const myMember = session[slot];
@@ -62,15 +63,30 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         if (cancelled) return;
         setSession((prev) => (sessionShallowEqual(prev, next) ? prev : next));
 
-        if (next.player1 && next.player2 && !next.band && !startedBandRef.current) {
+        if (
+          next.player1 &&
+          next.player2 &&
+          !next.band &&
+          !startedBandRef.current &&
+          !bandError
+        ) {
           startedBandRef.current = true;
           fetch("/api/band/generate", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ code }),
-          }).catch(() => {
-            startedBandRef.current = false;
-          });
+          })
+            .then(async (res) => {
+              if (!res.ok) {
+                const body = await res.json().catch(() => null);
+                throw new Error(body?.error ?? friendlyForStatus(res.status));
+              }
+            })
+            .catch((err) => {
+              if (cancelled) return;
+              setBandError(err instanceof Error ? err.message : "Couldn't form the band.");
+              startedBandRef.current = false;
+            });
         }
 
         if (next.band) {
@@ -84,28 +100,33 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
       cancelled = true;
       clearInterval(id);
     };
-  }, [code, router, session.band, stage]);
+  }, [code, router, session.band, stage, bandError]);
 
-  async function handlePicked(file: File, dataUrl: string) {
+  function retryBand() {
+    setBandError(null);
+    startedBandRef.current = false;
+  }
+
+  async function handlePicked(dataUrl: string, mediaType: "image/jpeg") {
     setStage("generating");
     setError(null);
     try {
-      const mediaType = inferMediaType(file.type);
       const res = await fetch("/api/member/generate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code, slot, image: dataUrl, mediaType }),
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Generation failed (${res.status})`);
+        const body = await res.json().catch(() => null);
+        const fallback = friendlyForStatus(res.status);
+        throw new Error(body?.error ?? fallback);
       }
       const data = (await res.json()) as { member: Member };
       const updated: Session = { ...session, [slot]: data.member } as Session;
       setSession(updated);
       setStage("reveal");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
+      setError(e instanceof Error ? e.message : "Something glitched. Try once more.");
       setStage("capture");
     }
   }
@@ -142,6 +163,7 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
           ) : null}
           <PhotoCapture
             onPicked={handlePicked}
+            onError={(m) => setError(m)}
             hint="Use your camera or pick from photos."
           />
           {error ? (
@@ -173,6 +195,15 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
                 Waiting for your bandmate to join...
               </p>
             </div>
+          ) : bandError ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">
+                {bandError}
+              </div>
+              <button onClick={retryBand} className="btn btn-primary">
+                Try again
+              </button>
+            </div>
           ) : (
             <div className="text-center text-[13px] text-ink/60">
               Both members in. Forming the band...
@@ -186,6 +217,15 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
           <MemberCard member={myMember} />
           {!otherMember ? (
             <RoomCodeShare code={code} />
+          ) : bandError ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">
+                {bandError}
+              </div>
+              <button onClick={retryBand} className="btn btn-primary">
+                Try again
+              </button>
+            </div>
           ) : (
             <div className="text-center text-[13px] text-ink/60">
               Both members in. Forming the band...
@@ -197,10 +237,10 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
   );
 }
 
-function inferMediaType(mime: string): "image/jpeg" | "image/png" | "image/webp" | "image/gif" {
-  const m = mime.toLowerCase();
-  if (m.includes("png")) return "image/png";
-  if (m.includes("webp")) return "image/webp";
-  if (m.includes("gif")) return "image/gif";
-  return "image/jpeg";
+function friendlyForStatus(status: number): string {
+  if (status === 413) return "Photo is too large. Try again with a smaller one.";
+  if (status === 422) return "Couldn't generate from that photo. Try a different object — not a person.";
+  if (status === 503) return "The model is busy right now. Try once more.";
+  if (status >= 500) return "Something glitched on our end. Try once more.";
+  return "Couldn't make a member from that. Try again.";
 }

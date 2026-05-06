@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession, saveSession, nextStatus } from "@/lib/kv";
 import { isRoomCode } from "@/lib/code";
 import { generateMember } from "@/lib/generate";
+import { classifyError, statusForCode } from "@/lib/errors";
 import type { Slot } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -48,12 +49,20 @@ export async function POST(req: Request) {
 
   const base64 = stripDataUrl(image);
 
-  const member = await generateMember(base64, mediaType, code, slot);
-  session[slot] = member;
-  session.status = nextStatus(session);
-  await saveSession(session);
-
-  return NextResponse.json({ member, status: session.status });
+  try {
+    const member = await generateMember(base64, mediaType, code, slot);
+    session[slot] = member;
+    session.status = nextStatus(session);
+    await saveSession(session);
+    return NextResponse.json({ member, status: session.status });
+  } catch (err) {
+    const e = classifyError(err);
+    console.error(`[member.generate] ${code}/${slot} ${e.code}`, err);
+    return NextResponse.json(
+      { error: e.userMessage, code: e.code },
+      { status: statusForCode(e.code) },
+    );
+  }
 }
 
 function stripDataUrl(s: string): string {

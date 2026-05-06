@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession, saveSession, nextStatus } from "@/lib/kv";
 import { isRoomCode } from "@/lib/code";
 import { generateBand } from "@/lib/generate";
+import { classifyError, statusForCode } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,15 +37,29 @@ export async function POST(req: Request) {
   session.status = "fusing";
   await saveSession(session);
 
-  const band = await generateBand(session.player1, session.player2, code);
+  try {
+    const band = await generateBand(session.player1, session.player2, code);
 
-  const fresh = (await getSession(code)) ?? session;
-  if (fresh.band) {
-    return NextResponse.json({ band: fresh.band, status: fresh.status });
+    const fresh = (await getSession(code)) ?? session;
+    if (fresh.band) {
+      return NextResponse.json({ band: fresh.band, status: fresh.status });
+    }
+    fresh.band = band;
+    fresh.status = nextStatus(fresh);
+    await saveSession(fresh);
+
+    return NextResponse.json({ band, status: fresh.status });
+  } catch (err) {
+    const e = classifyError(err);
+    console.error(`[band.generate] ${code} ${e.code}`, err);
+    const reverted = await getSession(code);
+    if (reverted && !reverted.band) {
+      reverted.status = nextStatus(reverted);
+      await saveSession(reverted);
+    }
+    return NextResponse.json(
+      { error: e.userMessage, code: e.code },
+      { status: statusForCode(e.code) },
+    );
   }
-  fresh.band = band;
-  fresh.status = nextStatus(fresh);
-  await saveSession(fresh);
-
-  return NextResponse.json({ band, status: fresh.status });
 }
