@@ -167,6 +167,11 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
               a stranger's umbrella. Claude will turn it into your bandmate.
             </p>
           </div>
+          <PhotoCapture
+            onPicked={handlePicked}
+            onError={(m) => setError(m)}
+            hint="Use your camera or pick from photos."
+          />
           {otherMember && slot === "player2" ? (
             <div className="opacity-90">
               <div className="mb-2 font-mono text-[10px] uppercase tracking-[0.22em] text-ink/55">
@@ -175,11 +180,6 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
               <MemberCard member={otherMember} />
             </div>
           ) : null}
-          <PhotoCapture
-            onPicked={handlePicked}
-            onError={(m) => setError(m)}
-            hint="Use your camera or pick from photos."
-          />
           {error ? (
             <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">
               {error}
