@@ -116,11 +116,25 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ code, slot, image: dataUrl, mediaType }),
       });
+
       if (!res.ok) {
+        // 409 means the server already completed generation on a previous attempt
+        // but the network response was lost before the client received it.
+        // Recover by using the member the server already stored.
+        if (res.status === 409) {
+          const body = await res.json().catch(() => null);
+          if (body?.member) {
+            const updated: Session = { ...session, [slot]: body.member } as Session;
+            setSession(updated);
+            setStage("reveal");
+            return;
+          }
+        }
         const body = await res.json().catch(() => null);
         const fallback = friendlyForStatus(res.status);
         throw new Error(body?.error ?? fallback);
       }
+
       const data = (await res.json()) as { member: Member };
       const updated: Session = { ...session, [slot]: data.member } as Session;
       setSession(updated);
