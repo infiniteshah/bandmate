@@ -57,9 +57,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ member, status: session.status });
   } catch (err) {
     const e = classifyError(err);
-    console.error(`[member.generate] ${code}/${slot} ${e.code}`, err);
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const cause = (err as Error & { cause?: unknown })?.cause;
+    const causeMessage = cause instanceof Error ? cause.message : undefined;
+    console.error(
+      `[member.generate] ${code}/${slot} ${e.code}: ${rawMessage}` +
+        (causeMessage ? ` (cause: ${causeMessage})` : ""),
+      err,
+    );
     return NextResponse.json(
-      { error: e.userMessage, code: e.code },
+      { error: e.userMessage, code: e.code, cause: rawMessage },
       { status: statusForCode(e.code) },
     );
   }
