@@ -1,4 +1,5 @@
 import { JoinForm } from "@/components/JoinForm";
+import { LibraryStrip } from "@/components/LibraryStrip";
 import { StartButton } from "@/components/StartButton";
 import { Wordmark } from "@/components/Wordmark";
 
@@ -27,6 +28,7 @@ export default function HomePage() {
 
       <section className="mt-12 flex flex-col gap-6">
         <StartButton />
+        <LibraryStrip />
         <div className="flex items-center gap-3 text-[10px] uppercase tracking-[0.22em] text-ink/40">
           <span className="h-px flex-1 bg-ink/15" />
           <span>or</span>

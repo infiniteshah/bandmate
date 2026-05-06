@@ -7,6 +7,7 @@ export function RoomCodeShare({ code }: { code: string }) {
     typeof window !== "undefined"
       ? `${window.location.origin}/join/${code}`
       : `/join/${code}`;
+  const shortUrl = url.replace(/^https?:\/\//, "");
 
   async function copy() {
     try {
@@ -21,7 +22,7 @@ export function RoomCodeShare({ code }: { code: string }) {
       try {
         await navigator.share({
           title: "BandMate",
-          text: "join my band",
+          text: "join my band — photograph an object",
           url,
         });
         return;
@@ -32,18 +33,26 @@ export function RoomCodeShare({ code }: { code: string }) {
 
   return (
     <div className="frame rounded-md p-5">
-      <div className="tag">Invite bandmate</div>
-      <div className="mt-3 flex items-baseline gap-2">
-        <div className="headline text-5xl font-semibold tracking-[0.04em]">{code}</div>
+      <div className="flex items-center justify-between">
+        <span className="tag">Invite a bandmate</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink/50">
+          They snap, you fuse
+        </span>
       </div>
-      <div className="mt-1 break-all font-mono text-[12px] text-ink/60">{url}</div>
+      <p className="headline mt-3 text-[15px] leading-snug text-ink/85">
+        Send the link. They open it on their phone, photograph an object, and
+        you'll fuse into a band.
+      </p>
       <div className="mt-4 flex gap-2">
         <button onClick={share} className="btn btn-primary flex-1">
-          Share link
+          Share invite link
         </button>
         <button onClick={copy} className="btn btn-ghost">
           {copied ? "Copied" : "Copy"}
         </button>
+      </div>
+      <div className="mt-3 break-all font-mono text-[11px] text-ink/55">
+        {shortUrl}
       </div>
     </div>
   );

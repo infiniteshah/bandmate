@@ -8,6 +8,7 @@ import { PhotoCapture } from "./PhotoCapture";
 import { RoomCodeShare } from "./RoomCodeShare";
 import { Wordmark } from "./Wordmark";
 import { memberLoadingCopy } from "@/lib/copy";
+import { recordRoom } from "@/lib/library";
 import type { Member, Session, Slot } from "@/lib/types";
 
 type Stage = "capture" | "generating" | "reveal" | "waiting";
@@ -30,6 +31,10 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
   const myMember = session[slot];
   const otherSlot: Slot = slot === "player1" ? "player2" : "player1";
   const otherMember = session[otherSlot];
+
+  useEffect(() => {
+    recordRoom(code, slot);
+  }, [code, slot]);
 
   useEffect(() => {
     if (stage !== "waiting" && stage !== "reveal") return;
