@@ -33,9 +33,6 @@ export async function POST(req: Request) {
   if (session.band) {
     return NextResponse.json({ band: session.band, status: session.status });
   }
-  if (session.status === "fusing") {
-    return NextResponse.json({ already: true, status: "fusing" }, { status: 409 });
-  }
 
   session.status = "fusing";
   await saveSession(session);

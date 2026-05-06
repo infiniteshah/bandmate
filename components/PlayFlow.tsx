@@ -104,7 +104,12 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
               if (!res.ok) {
                 // 409 means the server is already fusing (another client beat us here).
                 // Treat as a no-op — keep polling until the band appears.
-                if (res.status === 409) return;
+                if (res.status === 409) {
+                  // Another client beat us here or band gen is already in flight.
+                  // Reset ref so the next tick can re-trigger if still warranted.
+                  startedBandRef.current = false;
+                  return;
+                }
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error ?? friendlyForStatus(res.status));
               }
