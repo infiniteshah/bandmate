@@ -34,9 +34,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ band: session.band, status: session.status });
   }
 
-  session.status = "fusing";
-  await saveSession(session);
-
+  // No early status="fusing" save — that pattern wrote the whole stale
+  // session blob and risked clobbering a concurrent member.generate write.
+  // The real idempotency check is the band==null guard above plus the
+  // fresh re-read just before saving the band below.
   try {
     const band = await generateBand(session.player1, session.player2, code);
 
@@ -47,6 +48,9 @@ export async function POST(req: Request) {
     fresh.band = band;
     fresh.status = nextStatus(fresh);
     await saveSession(fresh);
+    console.log(
+      `[band.generate] ${code} saved. name=${band.name} status=${fresh.status}`,
+    );
 
     return NextResponse.json({ band, status: fresh.status });
   } catch (err) {
@@ -59,11 +63,8 @@ export async function POST(req: Request) {
         (causeMessage ? ` (cause: ${causeMessage})` : ""),
       err,
     );
-    const reverted = await getSession(code);
-    if (reverted && !reverted.band) {
-      reverted.status = nextStatus(reverted);
-      await saveSession(reverted);
-    }
+    // No status revert needed — we no longer write status="fusing" up front,
+    // so nothing to revert. Status is derived correctly on next read.
     return NextResponse.json(
       { error: e.userMessage, code: e.code, cause: rawMessage },
       { status: statusForCode(e.code) },

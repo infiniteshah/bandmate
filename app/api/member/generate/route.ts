@@ -51,10 +51,23 @@ export async function POST(req: Request) {
 
   try {
     const member = await generateMember(base64, mediaType, code, slot);
-    session[slot] = member;
-    session.status = nextStatus(session);
-    await saveSession(session);
-    return NextResponse.json({ member, status: session.status });
+    // Re-read just before write so a stale session object can't clobber
+    // the other slot (e.g. P2's save erasing P1, which is what happened
+    // in the UNELVS/5KKQA8 sessions where player2 silently went missing).
+    const fresh = (await getSession(code)) ?? session;
+    if (fresh[slot]) {
+      return NextResponse.json(
+        { error: "Slot already filled", member: fresh[slot] },
+        { status: 409 },
+      );
+    }
+    fresh[slot] = member;
+    fresh.status = nextStatus(fresh);
+    await saveSession(fresh);
+    console.log(
+      `[member.generate] ${code}/${slot} saved. p1=${!!fresh.player1} p2=${!!fresh.player2} status=${fresh.status}`,
+    );
+    return NextResponse.json({ member, status: fresh.status });
   } catch (err) {
     const e = classifyError(err);
     const rawMessage = err instanceof Error ? err.message : String(err);

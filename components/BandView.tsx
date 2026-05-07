@@ -17,6 +17,12 @@ export function BandView({ code, initialSession }: { code: string; initialSessio
     if (session.band) return;
     let cancelled = false;
     const tick = async () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
       try {
         const res = await fetch(`/api/session/${code}`, { cache: "no-store" });
         if (!res.ok) return;
@@ -26,9 +32,14 @@ export function BandView({ code, initialSession }: { code: string; initialSessio
     };
     const id = setInterval(tick, 3000);
     tick();
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [code, session.band]);
 

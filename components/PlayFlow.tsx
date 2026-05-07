@@ -67,6 +67,14 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
 
     let cancelled = false;
     const tick = async () => {
+      // Pause polling when the tab is hidden — otherwise a backgrounded tab
+      // burns hundreds of pointless KV reads (we saw 383 polls on UNELVS).
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
       try {
         const res = await fetch(`/api/session/${code}`, { cache: "no-store" });
         if (!res.ok) return;
@@ -130,9 +138,16 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
     };
     tick();
     const id = setInterval(tick, 3000);
+    // Re-poll immediately when the tab becomes visible again so the user
+    // doesn't wait up to 3s after refocusing.
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, session.band, stage, bandError]);

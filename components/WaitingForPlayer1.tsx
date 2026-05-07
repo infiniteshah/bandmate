@@ -26,6 +26,12 @@ export function WaitingForPlayer1({ code, initialSession }: Props) {
 
     let cancelled = false;
     const tick = async () => {
+      if (
+        typeof document !== "undefined" &&
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
       try {
         const res = await fetch(`/api/session/${code}`, { cache: "no-store" });
         if (!res.ok || cancelled) return;
@@ -40,9 +46,14 @@ export function WaitingForPlayer1({ code, initialSession }: Props) {
 
     tick();
     const id = setInterval(tick, 3000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, [code, player1]);
 
