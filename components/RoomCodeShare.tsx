@@ -1,12 +1,22 @@
 "use client";
 import { useState } from "react";
 
+// Prefer the canonical product domain so deployment URLs
+// (bandmate-xxx-...-projects.vercel.app) don't leak into share links.
+function shareOrigin(): string {
+  const env = process.env.NEXT_PUBLIC_BASE_URL;
+  if (env && !env.includes("localhost")) return env.replace(/\/+$/, "");
+  if (typeof window === "undefined") return "";
+  const origin = window.location.origin;
+  if (/\.vercel\.app$/.test(new URL(origin).hostname)) {
+    return "https://bandmate.tech";
+  }
+  return origin;
+}
+
 export function RoomCodeShare({ code }: { code: string }) {
   const [copied, setCopied] = useState(false);
-  const url =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/join/${code}`
-      : `/join/${code}`;
+  const url = `${shareOrigin()}/join/${code}`;
   const shortUrl = url.replace(/^https?:\/\//, "");
 
   async function copy() {
