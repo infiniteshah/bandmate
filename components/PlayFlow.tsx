@@ -121,6 +121,23 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error ?? friendlyForStatus(res.status));
               }
+              // Use the success response to drive navigation directly instead
+              // of waiting for a polling tick to read the saved band. Polling
+              // can land on a stale KV replica and delay or miss the read.
+              const body = (await res
+                .json()
+                .catch(() => null)) as { band?: unknown } | null;
+              if (body?.band) {
+                try {
+                  sessionStorage.setItem(
+                    `bandmate:band:${code}`,
+                    JSON.stringify(body.band),
+                  );
+                } catch {}
+              }
+              if (mountedRef.current) {
+                routerRef.current.push(`/band/${code}`);
+              }
             })
             .catch((err) => {
               // Use mountedRef (not cancelled) so errors surface even when the

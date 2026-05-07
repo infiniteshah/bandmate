@@ -10,7 +10,19 @@ import type { Session } from "@/lib/types";
 
 export function BandView({ code, initialSession }: { code: string; initialSession: Session }) {
   const router = useRouter();
-  const [session, setSession] = useState<Session>(initialSession);
+  // If the server-rendered session lacks the band (likely due to KV
+  // read-replica staleness right after band.generate wrote), fall back to
+  // a band that PlayFlow stashed in sessionStorage on its way here.
+  const [session, setSession] = useState<Session>(() => {
+    if (typeof window === "undefined" || initialSession.band) return initialSession;
+    try {
+      const cached = sessionStorage.getItem(`bandmate:band:${code}`);
+      if (cached) {
+        return { ...initialSession, band: JSON.parse(cached) };
+      }
+    } catch {}
+    return initialSession;
+  });
   const [shareError, setShareError] = useState<string | null>(null);
 
   useEffect(() => {
