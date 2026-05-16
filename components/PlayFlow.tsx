@@ -43,15 +43,6 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
     initialSession[slot] ? (slot === "player1" ? "waiting" : "reveal") : "capture",
   );
   const [error, setError] = useState<string | null>(null);
-  const [bandError, setBandError] = useState<string | null>(null);
-  const startedBandRef = useRef(false);
-  // Tracks true component unmount (not just effect re-run) so we can surface
-  // band gen errors even when the polling effect cleans up mid-flight.
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => { mountedRef.current = false; };
-  }, []);
 
   const myMember = session[slot];
   const otherSlot: Slot = slot === "player1" ? "player2" : "player1";
@@ -61,14 +52,18 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
     recordRoom(code, slot);
   }, [code, slot]);
 
+  // Poll only while waiting for the OTHER member to fill their slot.
+  // Once both members exist, navigate to /band/[code] — that page owns the
+  // fusion loading state and (if needed) any band-gen recovery.
   useEffect(() => {
     if (stage !== "waiting" && stage !== "reveal") return;
-    if (session.band) return;
+    if (session.player1 && session.player2) {
+      routerRef.current.push(`/band/${code}`);
+      return;
+    }
 
     let cancelled = false;
     const tick = async () => {
-      // Pause polling when the tab is hidden — otherwise a backgrounded tab
-      // burns hundreds of pointless KV reads (we saw 383 polls on UNELVS).
       if (
         typeof document !== "undefined" &&
         document.visibilityState !== "visible"
@@ -82,81 +77,22 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
         if (cancelled) return;
         setSession((prev) => {
           if (sessionShallowEqual(prev, next)) return prev;
-          // Never let a stale server read erase player/band data we already have locally.
-          // KV read-after-write lag can return null for a slot that was just written.
           const merged: Session = {
             ...next,
             player1: next.player1 ?? prev.player1,
             player2: next.player2 ?? prev.player2,
             band: next.band ?? prev.band,
           };
-          // If merging produced no visible change, skip the re-render.
           if (sessionShallowEqual(prev, merged)) return prev;
           return merged;
         });
-
-        if (
-          next.player1 &&
-          next.player2 &&
-          !next.band &&
-          !startedBandRef.current &&
-          !bandError
-        ) {
-          startedBandRef.current = true;
-          fetch("/api/band/generate", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ code }),
-          })
-            .then(async (res) => {
-              if (!res.ok) {
-                // 409 means the server is already fusing (another client beat us here).
-                // Treat as a no-op — keep polling until the band appears.
-                if (res.status === 409) {
-                  // Another client beat us here or band gen is already in flight.
-                  // Reset ref so the next tick can re-trigger if still warranted.
-                  startedBandRef.current = false;
-                  return;
-                }
-                const body = await res.json().catch(() => null);
-                throw new Error(body?.error ?? friendlyForStatus(res.status));
-              }
-              // Use the success response to drive navigation directly instead
-              // of waiting for a polling tick to read the saved band. Polling
-              // can land on a stale KV replica and delay or miss the read.
-              const body = (await res
-                .json()
-                .catch(() => null)) as { band?: unknown } | null;
-              if (body?.band) {
-                try {
-                  sessionStorage.setItem(
-                    `bandmate:band:${code}`,
-                    JSON.stringify(body.band),
-                  );
-                } catch {}
-              }
-              if (mountedRef.current) {
-                routerRef.current.push(`/band/${code}`);
-              }
-            })
-            .catch((err) => {
-              // Use mountedRef (not cancelled) so errors surface even when the
-              // polling effect re-runs mid-flight due to session.band changing.
-              if (!mountedRef.current) return;
-              setBandError(err instanceof Error ? err.message : "Couldn't form the band.");
-              startedBandRef.current = false;
-            });
-        }
-
-        if (next.band) {
+        if (next.player1 && next.player2) {
           routerRef.current.push(`/band/${code}`);
         }
       } catch {}
     };
     tick();
     const id = setInterval(tick, 3000);
-    // Re-poll immediately when the tab becomes visible again so the user
-    // doesn't wait up to 3s after refocusing.
     const onVis = () => {
       if (document.visibilityState === "visible") tick();
     };
@@ -167,12 +103,7 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
       document.removeEventListener("visibilitychange", onVis);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, session.band, stage, bandError]);
-
-  function retryBand() {
-    setBandError(null);
-    startedBandRef.current = false;
-  }
+  }, [code, stage, session.player1, session.player2]);
 
   async function handlePicked(dataUrl: string, mediaType: "image/jpeg") {
     setStage("generating");
@@ -203,14 +134,20 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
       }
 
       const data = (await res.json()) as { member: Member; status?: SessionStatus };
-      // Include server-returned status so local state stays in sync with KV,
-      // preventing spurious setSession calls on the first polling tick.
       const updated: Session = {
         ...session,
         [slot]: data.member,
         ...(data.status ? { status: data.status } : {}),
       } as Session;
       setSession(updated);
+      // If filling this slot just made the band possible, the server has
+      // already kicked off band generation in the background. Skip the
+      // reveal-then-poll dance and head straight to /band/[code], where
+      // the fusion loading state shows both members merging.
+      if (data.status === "fusing") {
+        routerRef.current.push(`/band/${code}`);
+        return;
+      }
       setStage("reveal");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something glitched. Try once more.");
@@ -282,18 +219,9 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
                 Waiting for your bandmate to join...
               </p>
             </div>
-          ) : bandError ? (
-            <div className="flex flex-col items-center gap-3 text-center">
-              <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">
-                {bandError}
-              </div>
-              <button onClick={retryBand} className="btn btn-primary">
-                Try again
-              </button>
-            </div>
           ) : (
             <div className="text-center text-[13px] text-ink/60">
-              Both members in. Forming the band...
+              Both members in. Heading to the studio...
             </div>
           )}
         </section>
@@ -304,18 +232,9 @@ export function PlayFlow({ code, slot, initialSession }: Props) {
           <MemberCard member={myMember} />
           {!otherMember ? (
             <RoomCodeShare code={code} />
-          ) : bandError ? (
-            <div className="flex flex-col items-center gap-3 text-center">
-              <div className="rounded-sm border border-accent/40 bg-accent/10 p-3 text-sm text-accent">
-                {bandError}
-              </div>
-              <button onClick={retryBand} className="btn btn-primary">
-                Try again
-              </button>
-            </div>
           ) : (
             <div className="text-center text-[13px] text-ink/60">
-              Both members in. Forming the band...
+              Both members in. Heading to the studio...
             </div>
           )}
         </section>

@@ -32,6 +32,10 @@ export type Band = {
   score: number;
   pullQuote: string;
   albumCoverUrl: string;
+  // Single symbolic motif used as the album cover subject. Lets the cover
+  // prompt avoid feeding in member visualDescriptors (which made Flux
+  // render the actual people instead of an abstract sleeve).
+  coverMotif?: string;
 };
 
 export type Session = {

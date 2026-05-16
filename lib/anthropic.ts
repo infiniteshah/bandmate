@@ -11,7 +11,12 @@ export function getAnthropic(): Anthropic {
   return client;
 }
 
-export const CLAUDE_MODEL = "claude-opus-4-7";
+// Opus for the member call: it has the photo to read, and getting the
+// object's vibe right is the highest-leverage decision in the whole pipeline.
+export const CLAUDE_MEMBER_MODEL = "claude-opus-4-7";
+// Sonnet for the band call: text-only, ~3–5s faster, and Sonnet's voice
+// holds the Pitchfork tone well.
+export const CLAUDE_BAND_MODEL = "claude-sonnet-4-6";
 
 export function extractText(content: Anthropic.Messages.ContentBlock[]): string {
   return content

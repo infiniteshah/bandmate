@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession, saveSession, nextStatus } from "@/lib/kv";
 import { isRoomCode } from "@/lib/code";
 import { generateMember } from "@/lib/generate";
+import { ensureBandGenerated } from "@/lib/band";
 import { classifyError, statusForCode } from "@/lib/errors";
 import type { Slot } from "@/lib/types";
 
@@ -67,6 +68,19 @@ export async function POST(req: Request) {
     console.log(
       `[member.generate] ${code}/${slot} saved. p1=${!!fresh.player1} p2=${!!fresh.player2} status=${fresh.status}`,
     );
+
+    // If this write filled both slots, kick off band generation immediately
+    // instead of waiting for a client polling tick to discover it. We don't
+    // await — band gen takes 15-25s and we want member.generate to return now
+    // so the client can navigate to /band/[code] and show the fusion state.
+    // The /api/band/generate route remains a fallback if this background
+    // task dies (Fluid Compute usually keeps the instance warm long enough).
+    if (fresh.player1 && fresh.player2 && !fresh.band) {
+      ensureBandGenerated(code).catch((err) => {
+        console.error(`[member.generate] ${code} background band gen failed:`, err);
+      });
+    }
+
     return NextResponse.json({ member, status: fresh.status });
   } catch (err) {
     const e = classifyError(err);

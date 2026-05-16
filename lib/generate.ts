@@ -1,4 +1,10 @@
-import { CLAUDE_MODEL, extractText, getAnthropic, parseJsonResponse } from "./anthropic";
+import {
+  CLAUDE_BAND_MODEL,
+  CLAUDE_MEMBER_MODEL,
+  extractText,
+  getAnthropic,
+  parseJsonResponse,
+} from "./anthropic";
 import { uploadImageFromUrl } from "./blob";
 import { generateSquareImage } from "./replicate";
 import {
@@ -26,6 +32,7 @@ type BandAi = {
   review: string;
   score: number;
   pullQuote: string;
+  coverMotif?: string;
 };
 
 function clampStat(n: unknown): number {
@@ -42,7 +49,7 @@ export async function generateMember(
 ): Promise<Member> {
   const anthropic = getAnthropic();
   const message = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
+    model: CLAUDE_MEMBER_MODEL,
     max_tokens: 700,
     system: MEMBER_SYSTEM_PROMPT,
     messages: [
@@ -102,7 +109,7 @@ export async function generateBand(
 ): Promise<Band> {
   const anthropic = getAnthropic();
   const message = await anthropic.messages.create({
-    model: CLAUDE_MODEL,
+    model: CLAUDE_BAND_MODEL,
     max_tokens: 900,
     system: BAND_SYSTEM_PROMPT,
     messages: [
@@ -122,14 +129,21 @@ export async function generateBand(
 
   let score = Number(ai.score);
   if (!Number.isFinite(score)) score = 7.3;
-  score = Math.max(6.0, Math.min(8.9, Math.round(score * 10) / 10));
+  // Defensive bounds only — model decides where the band actually lands.
+  score = Math.max(1.0, Math.min(10.0, Math.round(score * 10) / 10));
 
-  const coverPrompt = albumCoverPrompt(ai.genre, member1.visualDescriptor, member2.visualDescriptor);
+  // Fall back to a generic motif if the model omits one (rare with the
+  // schema requirement, but cheap to defend against).
+  const coverMotif =
+    typeof ai.coverMotif === "string" && ai.coverMotif.trim().length > 0
+      ? ai.coverMotif.trim()
+      : "an empty folding chair in a still room";
+
+  const coverPrompt = albumCoverPrompt(ai.genre, coverMotif);
   let coverTmpUrl: string;
   try {
     coverTmpUrl = await generateSquareImage(coverPrompt);
   } catch {
-    // Single retry — Replicate failed predictions are almost always transient
     coverTmpUrl = await generateSquareImage(coverPrompt);
   }
   const albumCoverUrl = await uploadImageFromUrl(
@@ -146,6 +160,7 @@ export async function generateBand(
     score,
     pullQuote: String(ai.pullQuote).trim(),
     albumCoverUrl,
+    coverMotif,
   };
 }
 

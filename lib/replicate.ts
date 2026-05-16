@@ -11,7 +11,11 @@ export function getReplicate(): Replicate {
   return client;
 }
 
-const FLUX_MODEL = "black-forest-labs/flux-schnell" as const;
+// Flux-Dev (not Schnell): Schnell is fast but ignores style anchors like
+// "risograph" and defaults to its base ligne-claire / new-wave aesthetic.
+// Dev follows prompts much better — needed for the print-look we want.
+// guidance ~3.5 + 28 steps is the sweet spot for dev.
+const FLUX_MODEL = "black-forest-labs/flux-dev" as const;
 
 export async function generateSquareImage(prompt: string): Promise<string> {
   const replicate = getReplicate();
@@ -22,6 +26,8 @@ export async function generateSquareImage(prompt: string): Promise<string> {
       output_format: "png",
       output_quality: 90,
       num_outputs: 1,
+      num_inference_steps: 28,
+      guidance: 3.5,
       go_fast: true,
       megapixels: "1",
     },

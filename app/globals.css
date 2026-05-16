@@ -118,3 +118,14 @@ body {
   100% { transform: translateY(0); }
 }
 .drift { animation: drift 3s ease-in-out infinite; }
+
+@keyframes fuse-left {
+  0%, 100% { transform: translateX(0) rotate(-3deg); }
+  50% { transform: translateX(8%) rotate(-1.5deg); }
+}
+@keyframes fuse-right {
+  0%, 100% { transform: translateX(0) rotate(3deg); }
+  50% { transform: translateX(-8%) rotate(1.5deg); }
+}
+.fuse-left { animation: fuse-left 3.6s ease-in-out infinite; }
+.fuse-right { animation: fuse-right 3.6s ease-in-out infinite; }

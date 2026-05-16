@@ -25,6 +25,7 @@ export async function GET(
   const band = session.band;
   const reviewExcerpt = excerpt(band.review, 320);
 
+  try {
   return new ImageResponse(
     (
       <div
@@ -79,6 +80,7 @@ export async function GET(
         <div style={{ marginTop: "40px", display: "flex", flexDirection: "column" }}>
           <div
             style={{
+              display: "flex",
               fontFamily: "Space Grotesk, sans-serif",
               fontSize: "20px",
               letterSpacing: "0.22em",
@@ -90,6 +92,7 @@ export async function GET(
           </div>
           <div
             style={{
+              display: "flex",
               fontFamily: "Newsreader, serif",
               fontSize: "92px",
               fontWeight: 600,
@@ -135,18 +138,19 @@ export async function GET(
           >
             <div
               style={{
+                display: "flex",
                 fontFamily: "Newsreader, serif",
                 fontSize: "120px",
                 fontWeight: 600,
                 lineHeight: 1,
                 color: ACCENT,
-                fontVariantNumeric: "tabular-nums",
               }}
             >
               {band.score.toFixed(1)}
             </div>
             <div
               style={{
+                display: "flex",
                 fontFamily: "JetBrains Mono, monospace",
                 fontSize: "20px",
                 letterSpacing: "0.18em",
@@ -168,6 +172,7 @@ export async function GET(
           >
             <div
               style={{
+                display: "flex",
                 fontFamily: "Newsreader, serif",
                 fontSize: "30px",
                 lineHeight: 1.35,
@@ -178,6 +183,7 @@ export async function GET(
             </div>
             <div
               style={{
+                display: "flex",
                 marginTop: "26px",
                 fontFamily: "Newsreader, serif",
                 fontStyle: "italic",
@@ -191,7 +197,7 @@ export async function GET(
           </div>
         </div>
 
-        <div style={{ flex: 1 }} />
+        <div style={{ display: "flex", flex: 1 }} />
 
         <div
           style={{
@@ -216,6 +222,12 @@ export async function GET(
       headers: { "Cache-Control": "public, max-age=300" },
     },
   );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error(`[share] ${code} failed: ${msg}`, stack);
+    return new Response(`share render failed: ${msg}`, { status: 500 });
+  }
 }
 
 function excerpt(s: string, max: number): string {
