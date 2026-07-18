@@ -28,7 +28,9 @@ export async function generateSquareImage(prompt: string): Promise<string> {
       num_outputs: 1,
       num_inference_steps: 28,
       guidance: 3.5,
-      go_fast: true,
+      // go_fast runs the fp8-quantized model, which measurably weakens the
+      // style adherence we picked flux-dev for. Worth the extra few seconds.
+      go_fast: false,
       megapixels: "1",
     },
   })) as unknown;

@@ -1,6 +1,7 @@
 import { ImageResponse } from "@vercel/og";
 import { getSession } from "@/lib/kv";
 import { isRoomCode } from "@/lib/code";
+import { getShareFonts } from "@/lib/share-fonts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ export async function GET(
   const reviewExcerpt = excerpt(band.review, 320);
 
   try {
+  const fonts = await getShareFonts();
   return new ImageResponse(
     (
       <div
@@ -219,6 +221,7 @@ export async function GET(
     {
       width: 1080,
       height: 1920,
+      fonts,
       headers: { "Cache-Control": "public, max-age=300" },
     },
   );

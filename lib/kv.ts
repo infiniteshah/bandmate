@@ -39,6 +39,24 @@ export async function saveSession(session: Session): Promise<void> {
   await redis.set(key(session.code), session, { ex: TTL_SECONDS });
 }
 
+// In-flight lock for band generation. Prevents the background trigger from
+// member.generate and BandView's ~6s fallback loop from running 2-4 concurrent
+// generateBand calls for the same room (duplicate Claude + Flux spend — the
+// worst thing to do while Replicate is throttling us). EX 120 (matching the
+// route maxDuration) is a safety net in case the holding instance dies
+// mid-generation.
+export async function acquireBandLock(code: string): Promise<boolean> {
+  const res = await redis.set(`bm:lock:band:${code.toUpperCase()}`, "1", {
+    nx: true,
+    ex: 120,
+  });
+  return res === "OK";
+}
+
+export async function releaseBandLock(code: string): Promise<void> {
+  await redis.del(`bm:lock:band:${code.toUpperCase()}`);
+}
+
 export function nextStatus(session: Session): SessionStatus {
   if (session.band) return "complete";
   if (session.player1 && session.player2) return "fusing";

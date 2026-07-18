@@ -5,7 +5,8 @@ import {
   getAnthropic,
   parseJsonResponse,
 } from "./anthropic";
-import { uploadImageFromUrl } from "./blob";
+import { uploadBytes, uploadImageFromUrl } from "./blob";
+import { applyRisoPrint } from "./print";
 import { generateSquareImage } from "./replicate";
 import {
   BAND_SYSTEM_PROMPT,
@@ -13,7 +14,28 @@ import {
   albumCoverPrompt,
   portraitPrompt,
 } from "./prompts";
+import { classifyError } from "./errors";
 import type { Band, Member, MemberStats } from "./types";
+
+const IMAGE_RETRY_DELAY_MS = 2500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// One retry, but only for transient failures, and with a pause first — an
+// instant retry after a 429/throttle almost always hits the same wall and
+// burns the only retry we have.
+async function generateImageWithBackoff(prompt: string): Promise<string> {
+  try {
+    return await generateSquareImage(prompt);
+  } catch (err) {
+    const code = classifyError(err).code;
+    if (code !== "model_busy" && code !== "generation_failed") throw err;
+    await sleep(IMAGE_RETRY_DELAY_MS);
+    return generateSquareImage(prompt);
+  }
+}
 
 type MemberAi = {
   name: string;
@@ -79,13 +101,7 @@ export async function generateMember(
   };
 
   const prompt = portraitPrompt(ai.visualDescriptor, ai.instrument);
-  let portraitTmpUrl: string;
-  try {
-    portraitTmpUrl = await generateSquareImage(prompt);
-  } catch {
-    // Single retry — Replicate failed predictions are almost always transient
-    portraitTmpUrl = await generateSquareImage(prompt);
-  }
+  const portraitTmpUrl = await generateImageWithBackoff(prompt);
   const portraitUrl = await uploadImageFromUrl(
     portraitTmpUrl,
     `bandmate/${code}/${slot}-portrait.png`,
@@ -140,15 +156,11 @@ export async function generateBand(
       : "an empty folding chair in a still room";
 
   const coverPrompt = albumCoverPrompt(ai.genre, coverMotif);
-  let coverTmpUrl: string;
-  try {
-    coverTmpUrl = await generateSquareImage(coverPrompt);
-  } catch {
-    coverTmpUrl = await generateSquareImage(coverPrompt);
-  }
-  const albumCoverUrl = await uploadImageFromUrl(
+  const coverTmpUrl = await generateImageWithBackoff(coverPrompt);
+  const albumCoverUrl = await uploadCoverWithRisoPrint(
     coverTmpUrl,
-    `bandmate/${code}/album-cover.png`,
+    ai.genre,
+    code,
   );
 
   return {
@@ -162,6 +174,30 @@ export async function generateBand(
     albumCoverUrl,
     coverMotif,
   };
+}
+
+// Fetch the raw Flux cover, run the deterministic riso finish, upload the
+// result. If post-processing fails for any reason, upload the raw cover
+// instead — a less-styled cover beats a failed band.
+async function uploadCoverWithRisoPrint(
+  tmpUrl: string,
+  genre: string,
+  code: string,
+): Promise<string> {
+  const pathname = `bandmate/${code}/album-cover.png`;
+  try {
+    const res = await fetch(tmpUrl);
+    if (!res.ok) throw new Error(`cover fetch failed: ${res.status}`);
+    const raw = Buffer.from(await res.arrayBuffer());
+    const printed = await applyRisoPrint(raw, genre);
+    return await uploadBytes(printed, pathname, "image/png");
+  } catch (err) {
+    console.error(
+      `[band.generate] ${code} riso post-process failed, uploading raw cover:`,
+      err,
+    );
+    return uploadImageFromUrl(tmpUrl, pathname);
+  }
 }
 
 function memberForPrompt(m: Member) {
