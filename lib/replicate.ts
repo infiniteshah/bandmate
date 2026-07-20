@@ -64,26 +64,27 @@ export async function generateSingleAudio(prompt: string): Promise<string> {
   return url;
 }
 
+// replicate-js 1.x returns FileOutput objects (url is a *method*) — as a
+// bare value for single-file models like MusicGen, or in an array for
+// multi-output models like Flux. Handle string / URL / FileOutput uniformly
+// in both shapes.
 function firstUrl(output: unknown): string | null {
-  if (typeof output === "string") return output;
-  if (Array.isArray(output)) {
-    const first = output[0];
-    if (typeof first === "string") return first;
-    if (first && typeof first === "object" && "url" in first) {
-      const u = (first as { url: unknown }).url;
-      if (typeof u === "string") return u;
-      if (typeof u === "function") {
-        try {
-          const v = (u as () => unknown)();
-          if (typeof v === "string") return v;
-          if (v instanceof URL) return v.toString();
-        } catch {}
-      }
-    }
-  }
-  if (output && typeof output === "object" && "url" in output) {
-    const u = (output as { url: unknown }).url;
-    if (typeof u === "string") return u;
+  return urlOf(Array.isArray(output) ? output[0] : output);
+}
+
+function urlOf(x: unknown): string | null {
+  if (typeof x === "string") return x;
+  if (!x || typeof x !== "object") return null;
+  if (x instanceof URL) return x.toString();
+  if (!("url" in x)) return null;
+  const u = (x as { url: unknown }).url;
+  if (typeof u === "string") return u;
+  if (typeof u === "function") {
+    try {
+      const v = (u as () => unknown).call(x);
+      if (typeof v === "string") return v;
+      if (v instanceof URL) return v.toString();
+    } catch {}
   }
   return null;
 }
