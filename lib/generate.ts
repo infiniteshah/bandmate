@@ -70,6 +70,7 @@ export async function generateMember(
   code: string,
   slot: "player1" | "player2",
 ): Promise<Member> {
+  const t0 = Date.now();
   const anthropic = getAnthropic();
   const message = await anthropic.messages.create({
     model: CLAUDE_MEMBER_MODEL,
@@ -109,11 +110,16 @@ export async function generateMember(
     vibe: clampStat(ai.stats?.vibe),
   };
 
+  const tClaude = Date.now();
   const prompt = portraitPrompt(ai.visualDescriptor, ai.instrument, ai.genreLean);
   const portraitTmpUrl = await generateImageWithBackoff(prompt);
+  const tFlux = Date.now();
   const portraitUrl = await uploadImageFromUrl(
     portraitTmpUrl,
     `bandmate/${code}/${slot}-portrait.png`,
+  );
+  console.log(
+    `[timing] member ${code}/${slot} claude=${tClaude - t0}ms flux=${tFlux - tClaude}ms upload=${Date.now() - tFlux}ms`,
   );
 
   return {
@@ -132,6 +138,7 @@ export async function generateBand(
   member2: Member,
   code: string,
 ): Promise<Band> {
+  const t0 = Date.now();
   const anthropic = getAnthropic();
   const message = await anthropic.messages.create({
     model: CLAUDE_BAND_MODEL,
@@ -172,12 +179,17 @@ export async function generateBand(
       ? ai.coverMotif.trim()
       : "an empty folding chair in a still room";
 
+  const tClaude = Date.now();
   const coverPrompt = albumCoverPrompt(ai.genre, coverMotif);
   const coverTmpUrl = await generateImageWithBackoff(coverPrompt);
+  const tFlux = Date.now();
   const albumCoverUrl = await uploadCoverWithRisoPrint(
     coverTmpUrl,
     ai.genre,
     code,
+  );
+  console.log(
+    `[timing] band ${code} claude=${tClaude - t0}ms flux=${tFlux - tClaude}ms riso+upload=${Date.now() - tFlux}ms`,
   );
 
   return {

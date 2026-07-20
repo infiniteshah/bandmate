@@ -42,7 +42,10 @@ export async function generateSquareImage(prompt: string): Promise<string> {
 
 // MusicGen for the band's single. stereo-melody-large needs a melody input;
 // stereo-large is the right variant for text-only prompting. ~30-60s warm.
-const MUSICGEN_MODEL = "meta/musicgen" as const;
+// Unlike flux-dev, meta/musicgen is NOT an official Replicate model — running
+// it by bare name 404s, so the version must be pinned.
+const MUSICGEN_MODEL =
+  "meta/musicgen:671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb" as const;
 
 export async function generateSingleAudio(prompt: string): Promise<string> {
   const replicate = getReplicate();
