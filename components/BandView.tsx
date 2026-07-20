@@ -6,7 +6,11 @@ import { LoadingState } from "./LoadingState";
 import { ReviewBlock } from "./ReviewBlock";
 import { Wordmark } from "./Wordmark";
 import { bandLoadingCopy } from "@/lib/copy";
-import type { Member, Session } from "@/lib/types";
+import type { Band, Member, Session } from "@/lib/types";
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Cadence (in 2s polling ticks):
 //   tick 3  (~6s): first server-trigger fallback if band still missing
@@ -221,6 +225,18 @@ export function BandView({ code, initialSession }: { code: string; initialSessio
       <AlbumCard band={band} />
       <ReviewBlock band={band} />
 
+      <SingleSection
+        code={code}
+        band={band}
+        onAudio={(url) =>
+          setSession((prev) =>
+            prev.band
+              ? { ...prev, band: { ...prev.band, singleAudioUrl: url } }
+              : prev,
+          )
+        }
+      />
+
       {session.player1 && session.player2 ? (
         <MemberThumbs player1={session.player1} player2={session.player2} />
       ) : null}
@@ -240,6 +256,100 @@ export function BandView({ code, initialSession }: { code: string; initialSessio
         ) : null}
       </div>
     </div>
+  );
+}
+
+function SingleSection({
+  code,
+  band,
+  onAudio,
+}: {
+  code: string;
+  band: Band;
+  onAudio: (url: string) => void;
+}) {
+  const [cutting, setCutting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cancelledRef = useRef(false);
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
+
+  const cut = useCallback(async () => {
+    setError(null);
+    setCutting(true);
+    // 409 means the other player's request holds the generation lock —
+    // keep asking until their result lands in the session.
+    for (let attempt = 0; attempt < 30; attempt++) {
+      if (cancelledRef.current) return;
+      try {
+        const res = await fetch("/api/single/generate", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code }),
+        });
+        const body = (await res.json().catch(() => null)) as
+          | { singleAudioUrl?: string; error?: string }
+          | null;
+        if (cancelledRef.current) return;
+        if (res.ok && body?.singleAudioUrl) {
+          onAudio(body.singleAudioUrl);
+          setCutting(false);
+          return;
+        }
+        if (res.status !== 409) {
+          setError(body?.error ?? "Couldn't cut the single. Try once more.");
+          setCutting(false);
+          return;
+        }
+      } catch {
+        // Network hiccup — fall through to the wait and retry.
+      }
+      await sleep(5000);
+    }
+    if (!cancelledRef.current) {
+      setError("That took too long. Try again.");
+      setCutting(false);
+    }
+  }, [code, onAudio]);
+
+  return (
+    <section className="frame rounded-md p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <span className="tag">Single</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-ink/55">
+          {band.runtime}
+        </span>
+      </div>
+      <div className="headline text-[16px] font-semibold leading-tight">
+        &ldquo;{band.singleTitle}&rdquo;
+      </div>
+      {band.singleAudioUrl ? (
+        <audio
+          controls
+          preload="none"
+          src={band.singleAudioUrl}
+          className="mt-3 w-full"
+        />
+      ) : cutting ? (
+        <p className="mt-3 animate-pulse text-[13px] text-ink/65">
+          Cutting the single — this can take a minute...
+        </p>
+      ) : (
+        <div className="mt-3 flex flex-col gap-1">
+          <button onClick={cut} className="btn btn-ghost self-start">
+            Cut the single
+          </button>
+          <p className="text-[11px] text-ink/45">
+            A 15-second demo of the track. Takes about a minute.
+          </p>
+          {error ? <p className="text-[13px] text-accent">{error}</p> : null}
+        </div>
+      )}
+    </section>
   );
 }
 

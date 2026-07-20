@@ -36,6 +36,9 @@ export type Band = {
   // prompt avoid feeding in member visualDescriptors (which made Flux
   // render the actual people instead of an abstract sleeve).
   coverMotif?: string;
+  // 15s MusicGen clip of the single. Generated lazily when someone presses
+  // "Cut the single" on the band page — absent until then.
+  singleAudioUrl?: string;
 };
 
 export type Session = {

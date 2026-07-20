@@ -40,6 +40,27 @@ export async function generateSquareImage(prompt: string): Promise<string> {
   return url;
 }
 
+// MusicGen for the band's single. stereo-melody-large needs a melody input;
+// stereo-large is the right variant for text-only prompting. ~30-60s warm.
+const MUSICGEN_MODEL = "meta/musicgen" as const;
+
+export async function generateSingleAudio(prompt: string): Promise<string> {
+  const replicate = getReplicate();
+  const output = (await replicate.run(MUSICGEN_MODEL, {
+    input: {
+      prompt,
+      model_version: "stereo-large",
+      duration: 15,
+      output_format: "mp3",
+      normalization_strategy: "loudness",
+    },
+  })) as unknown;
+
+  const url = firstUrl(output);
+  if (!url) throw new Error("Replicate returned no audio URL");
+  return url;
+}
+
 function firstUrl(output: unknown): string | null {
   if (typeof output === "string") return output;
   if (Array.isArray(output)) {
