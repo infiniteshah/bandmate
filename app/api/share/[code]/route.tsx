@@ -222,7 +222,8 @@ export async function GET(
       width: 1080,
       height: 1920,
       fonts,
-      headers: { "Cache-Control": "public, max-age=300" },
+      // A band is immutable once complete, so the composed card is too.
+      headers: { "Cache-Control": "public, max-age=86400, s-maxage=604800" },
     },
   );
   } catch (err) {
