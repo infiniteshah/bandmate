@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSession, saveSession, nextStatus } from "@/lib/kv";
+import { claimSlot, getSession } from "@/lib/kv";
 import { isRoomCode } from "@/lib/code";
 import { generateMember } from "@/lib/generate";
 import { ensureBandGenerated } from "@/lib/band";
 import { classifyError, statusForCode } from "@/lib/errors";
+import { withinRateLimit } from "@/lib/ratelimit";
 import type { Slot } from "@/lib/types";
+
+// ~6MB decoded. PhotoCapture compresses client-side to a fraction of this;
+// anything bigger is not coming from our UI.
+const MAX_IMAGE_BASE64_CHARS = 8_000_000;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,6 +44,18 @@ export async function POST(req: Request) {
   if (!image) {
     return NextResponse.json({ error: "Missing image" }, { status: 400 });
   }
+  if (image.length > MAX_IMAGE_BASE64_CHARS) {
+    return NextResponse.json(
+      { error: "Photo is too large. Try again — we'll resize it for you." },
+      { status: 413 },
+    );
+  }
+  if (!(await withinRateLimit(req, "member"))) {
+    return NextResponse.json(
+      { error: "Too many generations from this connection. Try again in a few minutes." },
+      { status: 429 },
+    );
+  }
 
   const session = await getSession(code);
   if (!session) {
@@ -52,21 +69,17 @@ export async function POST(req: Request) {
 
   try {
     const member = await generateMember(base64, mediaType, code, slot);
-    // Re-read just before write so a stale session object can't clobber
-    // the other slot (e.g. P2's save erasing P1, which is what happened
-    // in the UNELVS/5KKQA8 sessions where player2 silently went missing).
-    const fresh = (await getSession(code)) ?? session;
-    if (fresh[slot]) {
+    // HSETNX slot claim — atomic, so a concurrent request for the same slot
+    // loses cleanly and a write can never clobber the other player's slot.
+    const result = await claimSlot(code, slot, member);
+    if (!result.claimed) {
       return NextResponse.json(
-        { error: "Slot already filled", member: fresh[slot] },
+        { error: "Slot already filled", member: result.member },
         { status: 409 },
       );
     }
-    fresh[slot] = member;
-    fresh.status = nextStatus(fresh);
-    await saveSession(fresh);
     console.log(
-      `[member.generate] ${code}/${slot} saved. p1=${!!fresh.player1} p2=${!!fresh.player2} status=${fresh.status}`,
+      `[member.generate] ${code}/${slot} saved. status=${result.status}`,
     );
 
     // If this write filled both slots, kick off band generation immediately
@@ -75,13 +88,13 @@ export async function POST(req: Request) {
     // so the client can navigate to /band/[code] and show the fusion state.
     // The /api/band/generate route remains a fallback if this background
     // task dies (Fluid Compute usually keeps the instance warm long enough).
-    if (fresh.player1 && fresh.player2 && !fresh.band) {
+    if (result.status === "fusing") {
       ensureBandGenerated(code).catch((err) => {
         console.error(`[member.generate] ${code} background band gen failed:`, err);
       });
     }
 
-    return NextResponse.json({ member, status: fresh.status });
+    return NextResponse.json({ member, status: result.status });
   } catch (err) {
     const e = classifyError(err);
     const rawMessage = err instanceof Error ? err.message : String(err);

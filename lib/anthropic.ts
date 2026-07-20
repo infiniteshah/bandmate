@@ -18,23 +18,17 @@ export const CLAUDE_MEMBER_MODEL = "claude-opus-4-7";
 // holds the Pitchfork tone well.
 export const CLAUDE_BAND_MODEL = "claude-sonnet-4-6";
 
-export function extractText(content: Anthropic.Messages.ContentBlock[]): string {
-  return content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n")
-    .trim();
-}
-
-export function parseJsonResponse<T>(text: string): T {
-  let cleaned = text.trim();
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-  }
-  const start = cleaned.indexOf("{");
-  const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end === -1) {
-    throw new Error("No JSON object found in response");
-  }
-  return JSON.parse(cleaned.slice(start, end + 1)) as T;
+// Both generation calls force a tool call (tool_choice: {type: "tool"}), so
+// the API guarantees schema-shaped input — no text scraping, no parse
+// failures, no code-fence stripping.
+export function toolInput<T>(
+  message: Anthropic.Message,
+  toolName: string,
+): T {
+  const block = message.content.find(
+    (b): b is Anthropic.Messages.ToolUseBlock =>
+      b.type === "tool_use" && b.name === toolName,
+  );
+  if (!block) throw new Error(`No ${toolName} tool call in response`);
+  return block.input as T;
 }

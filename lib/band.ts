@@ -1,7 +1,6 @@
 import {
   getSession,
-  saveSession,
-  nextStatus,
+  saveBand,
   acquireBandLock,
   releaseBandLock,
 } from "./kv";
@@ -33,15 +32,11 @@ export async function ensureBandGenerated(code: string): Promise<boolean> {
 
     const band = await generateBand(session.player1, session.player2, code);
 
-    const fresh = (await getSession(code)) ?? session;
-    if (fresh.band) return false;
-    fresh.band = band;
-    fresh.status = nextStatus(fresh);
-    await saveSession(fresh);
-    console.log(
-      `[band.generate] ${code} saved. name=${band.name} status=${fresh.status}`,
-    );
-    return true;
+    const wrote = await saveBand(code, band);
+    if (wrote) {
+      console.log(`[band.generate] ${code} saved. name=${band.name}`);
+    }
+    return wrote;
   } catch (err) {
     const e = classifyError(err);
     const rawMessage = err instanceof Error ? err.message : String(err);

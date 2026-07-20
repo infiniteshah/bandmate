@@ -1,15 +1,16 @@
 import {
   CLAUDE_BAND_MODEL,
   CLAUDE_MEMBER_MODEL,
-  extractText,
   getAnthropic,
-  parseJsonResponse,
+  toolInput,
 } from "./anthropic";
 import { uploadBytes, uploadImageFromUrl } from "./blob";
 import { applyRisoPrint } from "./print";
 import { generateSquareImage } from "./replicate";
 import {
+  BAND_SCHEMA,
   BAND_SYSTEM_PROMPT,
+  MEMBER_SCHEMA,
   MEMBER_SYSTEM_PROMPT,
   albumCoverPrompt,
   portraitPrompt,
@@ -74,6 +75,14 @@ export async function generateMember(
     model: CLAUDE_MEMBER_MODEL,
     max_tokens: 700,
     system: MEMBER_SYSTEM_PROMPT,
+    tools: [
+      {
+        name: "record_member",
+        description: "Record the generated band member",
+        input_schema: MEMBER_SCHEMA,
+      },
+    ],
+    tool_choice: { type: "tool", name: "record_member" },
     messages: [
       {
         role: "user",
@@ -84,14 +93,14 @@ export async function generateMember(
           },
           {
             type: "text",
-            text: "Translate this object into a fictional band member. Return only JSON.",
+            text: "Translate this object into a fictional band member.",
           },
         ],
       },
     ],
   });
 
-  const ai = parseJsonResponse<MemberAi>(extractText(message.content));
+  const ai = toolInput<MemberAi>(message, "record_member");
 
   const stats: MemberStats = {
     stagePresence: clampStat(ai.stats?.stagePresence),
@@ -100,7 +109,7 @@ export async function generateMember(
     vibe: clampStat(ai.stats?.vibe),
   };
 
-  const prompt = portraitPrompt(ai.visualDescriptor, ai.instrument);
+  const prompt = portraitPrompt(ai.visualDescriptor, ai.instrument, ai.genreLean);
   const portraitTmpUrl = await generateImageWithBackoff(prompt);
   const portraitUrl = await uploadImageFromUrl(
     portraitTmpUrl,
@@ -128,20 +137,28 @@ export async function generateBand(
     model: CLAUDE_BAND_MODEL,
     max_tokens: 900,
     system: BAND_SYSTEM_PROMPT,
+    tools: [
+      {
+        name: "record_band",
+        description: "Record the band the two members form",
+        input_schema: BAND_SCHEMA,
+      },
+    ],
+    tool_choice: { type: "tool", name: "record_band" },
     messages: [
       {
         role: "user",
         content: [
           {
             type: "text",
-            text: `Member 1:\n${JSON.stringify(memberForPrompt(member1), null, 2)}\n\nMember 2:\n${JSON.stringify(memberForPrompt(member2), null, 2)}\n\nReturn only JSON for the band they form.`,
+            text: `Member 1:\n${JSON.stringify(memberForPrompt(member1), null, 2)}\n\nMember 2:\n${JSON.stringify(memberForPrompt(member2), null, 2)}\n\nGenerate the band they form.`,
           },
         ],
       },
     ],
   });
 
-  const ai = parseJsonResponse<BandAi>(extractText(message.content));
+  const ai = toolInput<BandAi>(message, "record_band");
 
   let score = Number(ai.score);
   if (!Number.isFinite(score)) score = 7.3;

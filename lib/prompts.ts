@@ -20,17 +20,38 @@ Rules:
 - Bios are a single deadpan sentence in the voice of a music magazine profile. No exclamation points. No emoji.
 - Genre leans are specific subgenres. Never "rock" or "indie".
 - Stats are integers from 1 to 10. Match each stat to the member's actual essence — a serene contemplative member shouldn't have chaos: 8; a chaotic one shouldn't have stagePresence: 2. Don't force a spread, and don't hand out matched 7s and 8s out of caution. Pick numbers that feel honest to who this member is.
-- visualDescriptor: an 8–14 word phrase describing a PERSON (not the object) suitable for an image-gen prompt. Include hair, posture, era of styling, mood. Should also evoke the genre.
+- visualDescriptor: an 8–14 word phrase describing a PERSON (not the object) suitable for an image-gen prompt. Include hair, posture, era of styling, mood. Should also evoke the genre.`;
 
-Respond with ONLY valid JSON matching this shape, no preamble, no code fences:
-{
-  "name": "string",
-  "instrument": "string",
-  "genreLean": "string",
-  "bio": "string",
-  "stats": { "stagePresence": 0, "songwriting": 0, "chaos": 0, "vibe": 0 },
-  "visualDescriptor": "string"
-}`;
+const statSchema = { type: "integer", minimum: 1, maximum: 10 } as const;
+
+export const MEMBER_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    name: { type: "string" },
+    instrument: { type: "string" },
+    genreLean: { type: "string" },
+    bio: { type: "string" },
+    stats: {
+      type: "object",
+      properties: {
+        stagePresence: statSchema,
+        songwriting: statSchema,
+        chaos: statSchema,
+        vibe: statSchema,
+      },
+      required: ["stagePresence", "songwriting", "chaos", "vibe"],
+    },
+    visualDescriptor: { type: "string" },
+  },
+  required: [
+    "name",
+    "instrument",
+    "genreLean",
+    "bio",
+    "stats",
+    "visualDescriptor",
+  ],
+};
 
 export const BAND_SYSTEM_PROMPT = `You are writing for a music publication that takes itself too seriously. Given two band members, generate the band they'd form together.
 
@@ -43,19 +64,31 @@ Rules:
 - Score: X.X to one decimal, reflecting how genuinely good the band is. A truly remarkable pairing might land on 8.6 or 8.8; a record that mostly works but has real flaws lands on 6.7 or 7.2; a forgettable or actively bad one lands on 4.9 or 3.6. Don't anchor everything around the safe 7-range. Avoid round numbers like 7.0 or 8.0 — odd-feeling numbers like 6.8 or 7.3 read more like a real Pitchfork score.
 - Pull quote: a single sentence lifted (or lightly adapted) from the review that works as a standalone caption.
 - coverMotif: a single concrete, symbolic scene or object for the album cover — NEVER a person, NEVER the band members. 6–14 words. It should evoke the genre and the band's emotional center, not depict any human. Think: "a single moth circling a porch lamp", "stacked teacups in cracked afternoon light", "a half-drawn parlor curtain", "an empty folding chair in a snowfield", "a transistor radio on a kitchen table", "a frayed cassette ribbon coiled on linoleum". Specific, lonely, ordinary objects beat abstract concepts. No people. No band members. No instruments either — those go in the portraits, not the cover.
-- No emoji. No exclamation points.
+- No emoji. No exclamation points.`;
 
-Respond with ONLY valid JSON matching this shape, no preamble, no code fences:
-{
-  "name": "string",
-  "genre": "string",
-  "singleTitle": "string",
-  "runtime": "M:SS",
-  "review": "string",
-  "score": 0.0,
-  "pullQuote": "string",
-  "coverMotif": "string"
-}`;
+export const BAND_SCHEMA = {
+  type: "object" as const,
+  properties: {
+    name: { type: "string" },
+    genre: { type: "string" },
+    singleTitle: { type: "string" },
+    runtime: { type: "string", description: "M:SS" },
+    review: { type: "string" },
+    score: { type: "number" },
+    pullQuote: { type: "string" },
+    coverMotif: { type: "string" },
+  },
+  required: [
+    "name",
+    "genre",
+    "singleTitle",
+    "runtime",
+    "review",
+    "score",
+    "pullQuote",
+    "coverMotif",
+  ],
+};
 
 // Style anchor used by both prompts. We reference specific real-world print
 // traditions Flux recognizes by name (risograph zines, ECM Records sleeves,
@@ -69,9 +102,53 @@ const STYLE = [
   "limited duotone palette of ink on warm cream paper",
   "hand-pulled silkscreen texture, paper grain, slightly off-register",
   "1970s independent record sleeve illustration",
-  "in the visual tradition of ECM Records covers, Reid Miles' Blue Note design, Hipgnosis sleeves, and Factory Records",
   "flat ink shapes, no shading gradients, no airbrush, no glow",
 ].join(", ");
+
+// One design tradition per genre family. The old anchor invoked ECM, Blue
+// Note, Hipgnosis, and Factory simultaneously — four very different schools
+// that averaged out to mush. Hit-count keyword match, same approach as the
+// riso palette picker.
+const STYLE_ANCHORS: Array<{ keywords: string[]; anchor: string }> = [
+  {
+    keywords: ["jazz", "dub", "soul", "funk", "ethio", "tropic", "cumbia", "world", "afro", "reggae"],
+    anchor: "in the visual tradition of Reid Miles' Blue Note album covers",
+  },
+  {
+    keywords: ["ambient", "drone", "minimal", "kraut", "fourth-world", "slowcore"],
+    anchor: "in the visual tradition of ECM Records sleeve design",
+  },
+  {
+    keywords: ["shoegaze", "dream pop", "dream", "ethereal"],
+    anchor: "in the visual tradition of Vaughan Oliver's 4AD sleeve design",
+  },
+  {
+    keywords: ["post-punk", "cold", "industrial", "synth", "techno", "idm", "electro", "ebm", "wave", "hyperpop", "dance"],
+    anchor: "in the visual tradition of Peter Saville's Factory Records sleeve design",
+  },
+  {
+    keywords: ["punk", "noise", "hardcore", "garage", "sludge", "doom", "lo-fi", "no wave"],
+    anchor: "in the visual tradition of xeroxed DIY punk 7-inch sleeves",
+  },
+  {
+    keywords: ["folk", "country", "americana", "twee", "songwriter", "gothic", "psych", "freak"],
+    anchor: "in the visual tradition of vintage Folkways Records sleeve design",
+  },
+];
+
+function styleAnchor(genre: string): string {
+  const g = genre.toLowerCase();
+  let best = "in the visual tradition of 1970s independent record sleeves";
+  let bestHits = 0;
+  for (const { keywords, anchor } of STYLE_ANCHORS) {
+    const hits = keywords.filter((k) => g.includes(k)).length;
+    if (hits > bestHits) {
+      best = anchor;
+      bestHits = hits;
+    }
+  }
+  return best;
+}
 
 const STYLE_NEGATIVES = [
   "no photorealism",
@@ -83,11 +160,16 @@ const STYLE_NEGATIVES = [
   "no art deco, no ligne claire",
 ].join(", ");
 
-export function portraitPrompt(visualDescriptor: string, instrument: string): string {
+export function portraitPrompt(
+  visualDescriptor: string,
+  instrument: string,
+  genreLean: string,
+): string {
   return [
     `printed portrait illustration of ${visualDescriptor}, holding ${instrument}`,
     "subject roughly centered, head and shoulders, looking slightly off-camera",
     STYLE,
+    styleAnchor(genreLean),
     STYLE_NEGATIVES,
     "no text, no typography, no logos",
     "square format",
@@ -104,6 +186,7 @@ export function albumCoverPrompt(
     "composition is graphic, deliberate, sleeve-like — not a busy scene",
     "one or two clear visual ideas, plenty of negative space",
     STYLE,
+    styleAnchor(genre),
     STYLE_NEGATIVES,
     "no people, no faces, no figures, no portraits",
     "no text, no typography, no band name, no logos",
