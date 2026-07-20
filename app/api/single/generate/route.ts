@@ -58,7 +58,7 @@ export async function POST(req: Request) {
     const rawMessage = err instanceof Error ? err.message : String(err);
     console.error(`[single.generate] ${code} ${e.code}: ${rawMessage}`);
     return NextResponse.json(
-      { error: "Couldn't cut the single. Try once more.", code: e.code },
+      { error: "Couldn't cut the single. Try once more.", code: e.code, cause: rawMessage },
       { status: statusForCode(e.code) },
     );
   }
